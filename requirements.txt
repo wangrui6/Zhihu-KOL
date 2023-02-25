@@ -1,0 +1,10 @@
+tqdm
+requests
+retry
+multitasking
+pandas
+bs4
+notebook
+huggingface_hub
+pyarrow
+datasets
