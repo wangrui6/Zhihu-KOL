@@ -27,8 +27,6 @@ class Content_Data():
     answer_creation_time : str
 
 
-
-
 def get_answer_content(qid: int, aid:int, question_str:str) -> str:
     '''
     根据回答ID和问题ID获取回答内容
@@ -86,10 +84,6 @@ def get_answer_content(qid: int, aid:int, question_str:str) -> str:
     )
 
 
-
-
-
-
 def get_all_href(page:Union[Page,Locator]) -> List[str]:
     hrefs = page.evaluate('''() => {
             let links = document.querySelectorAll('[href]');
@@ -142,8 +136,6 @@ def scrape_people_roundtable():
             all_ppl_df.to_csv("people.csv")
 
 
-
-
 '''
 End to end auto scrape topics from round table 
 '''
@@ -179,7 +171,7 @@ def end_to_end_auto_scrape():
                     qUrl = qId.replace("?write", "")
                     
                     page.goto(qUrl)
-                    question_title = page.locator(".QuestionHeader-title").all_inner_texts()
+                    question_title = page.locator(".QuestionHeader-title").all_inner_texts()[0]
                     all_hrefs = get_all_href(page.locator(".QuestionAnswers-answers"))
                     # search for all question-answer url
                     matches_question_answer_url = set([s for s in all_hrefs if isinstance(s, str) and re.search(pattern, s)])
@@ -199,7 +191,6 @@ def end_to_end_auto_scrape():
             tmp_df = pd.json_normalize(all_payloads)
             print(tmp_df)
             tmp_df.to_csv("zhihu.csv")
-
 
 
 if __name__ == "__main__":
