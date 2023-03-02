@@ -148,7 +148,7 @@ def end_to_end_auto_scrape():
     headless = False
     pattern = r"/question/\d+/answer/\d+"
     all_payloads = []
-    roundtable_topic_scrolldown = 20
+    roundtable_topic_scrolldown = 200
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless, timeout=60000)
         page = browser.new_page()
