@@ -2,3 +2,4 @@
 *.parquet
 *.out
 !data/round_table_topics.csv
+.vscode

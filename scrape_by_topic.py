@@ -226,9 +226,6 @@ async def end_to_end_auto_scrape(headless=True):
                         all_question_cor.append( get_answer_content(
                             qId, aId, question_title
                         ))
-                        # complete_content_data = await get_answer_content(
-                        #     qId, aId, question_title
-                        # )
                     complete_content_data = await asyncio.gather(*all_question_cor)
                     content_data_dict = [dataclasses.asdict(x) for x in complete_content_data]
                     all_payloads.extend(content_data_dict)
