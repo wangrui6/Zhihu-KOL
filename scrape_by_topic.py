@@ -208,6 +208,26 @@ def end_to_end_auto_scrape():
             tmp_df.to_csv("zhihu.csv")
 
 
+def scrape_round_tables():
+    output_dir = "./data"
+    headless = False
+
+    roundtable_topic_scrolldown = 200
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless, timeout=60000)
+        page = browser.new_page()
+        page.goto("https://zhihu.com/roundtable")
+        # Scroll down roundtable topic to get more topic urls
+        for _ in range(roundtable_topic_scrolldown):
+            page.keyboard.down("End")
+            page.wait_for_timeout(500)
+        hrefs = get_all_href(page)
+        relevent_hrefs = [x for x in hrefs if "https://www.zhihu.com/roundtable/" in x]
+        round_table_df = pd.DataFrame({
+            "round_table_topic_url" : relevent_hrefs
+        })
+        round_table_df.to_csv(f"{output_dir}/round_table_topics.csv")
 if __name__ == "__main__":
     # scrape_people_roundtable()
-    end_to_end_auto_scrape()
+    # end_to_end_auto_scrape()
+    scrape_round_tables()
