@@ -2,4 +2,6 @@
 *.parquet
 *.out
 !data/round_table_topics.csv
+!data/common_topics.csv
+
 .vscode
