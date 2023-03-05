@@ -11,10 +11,20 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from loguru import logger
-from playwright.sync_api import Locator, Page, sync_playwright
+from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright, Page, Locator, Route, Request
 from tqdm import tqdm
+import asyncio
+import httpx
+import re
+import sys
 
 
+'''
+Change the logger level to debug for verbose
+'''
+logger.remove()
+logger.add(sys.stderr, level="INFO")
 @dataclass
 class Content_Data:
     question_id: int
@@ -26,7 +36,7 @@ class Content_Data:
     answer_creation_time: str
 
 
-def get_answer_content(qid: int, aid: int, question_str: str) -> str:
+async def get_answer_content(qid: int, aid: int, question_str: str) -> str:
     """
     根据回答ID和问题ID获取回答内容
     Parameters
@@ -46,7 +56,11 @@ def get_answer_content(qid: int, aid: int, question_str: str) -> str:
         "Host": "www.zhihu.com",
     }
     url = f"https://www.zhihu.com/question/{qid}/answer/{aid}"
-    response = requests.get(url, headers=headers)
+    logger.debug(f"start req {url}")
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers)
+    logger.debug(f"received response {url}")
 
     soup = BeautifulSoup(response.text, "html.parser")
     content = " ".join([p.text.strip() for p in soup.find_all("p")])
@@ -87,8 +101,8 @@ def get_answer_content(qid: int, aid: int, question_str: str) -> str:
     )
 
 
-def get_all_href(page: Union[Page, Locator]) -> List[str]:
-    hrefs = page.evaluate(
+async def get_all_href(page: Union[Page, Locator]) -> List[str]:
+    hrefs = await page.evaluate(
         """() => {
             let links = document.querySelectorAll('[href]');
             let hrefs = [];
@@ -107,79 +121,94 @@ Scrape people from round table topics. Save a list of zhihu people profile url t
 """
 
 
-def scrape_people_roundtable():
-    headless = False
-    all_ppl_df = pd.DataFrame()
-    roundtable_topic_scrolldown = 20
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless, timeout=60000)
-        page = browser.new_page()
-        page.goto("https://zhihu.com/roundtable")
-        # Scroll down roundtable topic to get more topic urls
-        for _ in range(roundtable_topic_scrolldown):
-            page.keyboard.down("End")
-            page.wait_for_timeout(1000)
+# def scrape_people_roundtable():
+#     headless = False
+#     all_ppl_df = pd.DataFrame()
+#     roundtable_topic_scrolldown = 20
+#     with sync_playwright() as p:
+#         browser = p.chromium.launch(headless=headless, timeout=60000)
+#         page = browser.new_page()
+#         page.goto("https://zhihu.com/roundtable")
+#         # Scroll down roundtable topic to get more topic urls
+#         for _ in range(roundtable_topic_scrolldown):
+#             page.keyboard.down("End")
+#             page.wait_for_timeout(1000)
 
-        hrefs = get_all_href(page)
-        relevent_hrefs = [x for x in hrefs if "https://www.zhihu.com/roundtable/" in x]
-        np.random.shuffle(relevent_hrefs)
-        # Earlier round table topic might not have started yet. The offset roundtable topic is arbitrary.
+#         hrefs = get_all_href(page)
+#         relevent_hrefs = [x for x in hrefs if "https://www.zhihu.com/roundtable/" in x]
+#         np.random.shuffle(relevent_hrefs)
+#         # Earlier round table topic might not have started yet. The offset roundtable topic is arbitrary.
 
-        starting_offset = 4
-        for topic_url in tqdm(relevent_hrefs[starting_offset:]):
-            try:
-                page.goto(topic_url)
-                all_hrefs = get_all_href(page)
-                people_urls = [x for x in all_hrefs if "/people/" in x]
-                latest_people_id = pd.DataFrame({"people_id": people_urls})
-                all_ppl_df = pd.concat([all_ppl_df, latest_people_id])
-            except Exception as e1:
-                logger.error(e1)
+#         starting_offset = 4
+#         for topic_url in tqdm(relevent_hrefs[starting_offset:]):
+#             try:
+#                 page.goto(topic_url)
+#                 all_hrefs = get_all_href(page)
+#                 people_urls = [x for x in all_hrefs if "/people/" in x]
+#                 latest_people_id = pd.DataFrame({"people_id": people_urls})
+#                 all_ppl_df = pd.concat([all_ppl_df, latest_people_id])
+#             except Exception as e1:
+#                 logger.error(e1)
 
-            all_ppl_df.to_csv("people.csv")
+#             all_ppl_df.to_csv("people.csv")
 
+
+async def get_questions(page:Page, topic_url:str):
+    await page.goto(topic_url)
+    all_hrefs =  await get_all_href(page)
+    question_urls = set(
+        [x for x in all_hrefs if "/question/" in x and "waiting" not in x]
+    )
+    return question_urls
+
+async def intercept_request(route:Route, request:Request, req_to_abort:List[str]):
+
+    regex = re.compile( '|'.join(req_to_abort), flags=re.IGNORECASE)
+    if regex.search(pos = 10,string=request.url):
+        logger.debug(f"Abort request :{request.url}")
+        await route.abort()
+    else:
+        # logger.success(request.url)
+
+        await route.continue_()
+
+    # if request.url == 'https://www.example.com/api':
+    #     # Modify the request headers or body
+    #     request.headers['Authorization'] = 'Bearer <access_token>'
+    #     request.post_data = 'param1=value1&param2=value2'
 
 """
 End to end auto scrape topics from round table
 """
 
 
-def end_to_end_auto_scrape():
-    headless = False
+async def end_to_end_auto_scrape(headless=True):
     pattern = r"/question/\d+/answer/\d+"
     all_payloads = []
-    roundtable_topic_scrolldown = 200
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless, timeout=60000)
-        page = browser.new_page()
-        page.goto("https://zhihu.com/roundtable")
-        # Scroll down roundtable topic to get more topic urls
-        for _ in range(roundtable_topic_scrolldown):
-            page.keyboard.down("End")
-            page.wait_for_timeout(1000)
+    all_round_table_df = pd.read_csv("data/round_table_topics.csv")
+    relevent_hrefs = all_round_table_df["round_table_topic_url"].tolist()
+    np.random.shuffle(relevent_hrefs)
+    req_to_abort = ["jpeg", "png","gif", "banners", "webp"]
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=headless, timeout=10000)
+        page:Page = await browser.new_page()
+        await page.route('**', lambda route, request: asyncio.create_task(intercept_request(route, request, req_to_abort)))
 
-        hrefs = get_all_href(page)
-        relevent_hrefs = [x for x in hrefs if "https://www.zhihu.com/roundtable/" in x]
-        np.random.shuffle(relevent_hrefs)
         # Earlier round table topic might not have started yet. The offset roundtable topic is arbitrary.
-
-        starting_offset = 4
+        starting_offset = 2
         for topic_url in tqdm(relevent_hrefs[starting_offset:]):
             try:
-                page.goto(topic_url)
-                all_hrefs = get_all_href(page)
-                question_urls = set(
-                    [x for x in all_hrefs if "/question/" in x and "waiting" not in x]
-                )
-                # people_urls = [x for x in all_hrefs if "/people/" in x]
+                question_urls = await get_questions(page, topic_url)
                 for qId in question_urls:
                     qUrl = qId.replace("?write", "")
 
-                    page.goto(qUrl)
-                    question_title = page.locator(
+                    await page.goto(qUrl)
+                    question_title_cor = await page.locator(
                         ".QuestionHeader-title"
-                    ).all_inner_texts()[0]
-                    all_hrefs = get_all_href(page.locator(".QuestionAnswers-answers"))
+                    ).all_inner_texts()
+                    question_title = question_title_cor[0]
+
+                    all_hrefs = await get_all_href(page.locator(".QuestionAnswers-answers"))
                     # search for all question-answer url
                     matches_question_answer_url = set(
                         [
@@ -188,26 +217,50 @@ def end_to_end_auto_scrape():
                             if isinstance(s, str) and re.search(pattern, s)
                         ]
                     )
-
+                    
+                    all_question_cor = []
                     for k in matches_question_answer_url:
                         elem = k.split("/")
                         qId = int(elem[-3])
                         aId = int(elem[-1])
-
-                        complete_content_data = get_answer_content(
+                        all_question_cor.append( get_answer_content(
                             qId, aId, question_title
-                        )
-
-                        content_data_dict = dataclasses.asdict(complete_content_data)
-                        all_payloads.append(content_data_dict)
-                        time.sleep(1)
+                        ))
+                    complete_content_data = await asyncio.gather(*all_question_cor)
+                    content_data_dict = [dataclasses.asdict(x) for x in complete_content_data]
+                    all_payloads.extend(content_data_dict)
+                    logger.success(f"Received {len(content_data_dict)} answers from question : {question_title}")
             except Exception as e1:
                 logger.error(e1)
             tmp_df = pd.json_normalize(all_payloads)
             print(tmp_df)
             tmp_df.to_csv("zhihu.csv")
+            logger.success(f"Saved {len(tmp_df)} answers to disk.")
 
+'''
+We do not need to scrpae round table topic repeatedly because round table topics are only 1.6k in total and it is growing very slow
+'''
+def scrape_round_tables(headless=True):
+    output_dir = "./data"
 
+    roundtable_topic_scrolldown = 200
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless, timeout=60000)
+        page = browser.new_page()
+        page.goto("https://zhihu.com/roundtable")
+        # Scroll down roundtable topic to get more topic urls
+        for _ in range(roundtable_topic_scrolldown):
+            page.keyboard.down("End")
+            page.wait_for_timeout(500)
+        hrefs = get_all_href(page)
+        relevent_hrefs = [x for x in hrefs if "https://www.zhihu.com/roundtable/" in x]
+        round_table_df = pd.DataFrame({
+            "round_table_topic_url" : relevent_hrefs
+        })
+        round_table_df.to_csv(f"{output_dir}/round_table_topics.csv")
 if __name__ == "__main__":
+    headless = False
     # scrape_people_roundtable()
-    end_to_end_auto_scrape()
+    # end_to_end_auto_scrape()
+    # scrape_round_tables()
+    asyncio.run(end_to_end_auto_scrape(headless))
