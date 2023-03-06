@@ -1,3 +1,4 @@
 *.csv
 *.parquet
 *.out
+.ipynb_checkpoints/
