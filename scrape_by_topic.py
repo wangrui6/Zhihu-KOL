@@ -15,10 +15,14 @@ import requests
 from bs4 import BeautifulSoup
 from loguru import logger
 from playwright.async_api import (Locator, Page, Request, Route,
-                                  async_playwright)
+                                  async_playwright,
+                                  Browser
+                                  
+                                  )
 from playwright.sync_api import sync_playwright
 from tqdm import tqdm
-
+import playwright
+from typing import Any
 """
 Change the logger level to debug for verbose
 """
@@ -168,13 +172,23 @@ async def get_questions(page: Page, topic_url: str):
 
 async def intercept_request(route: Route, request: Request, req_to_abort: List[str]):
     regex = re.compile("|".join(req_to_abort), flags=re.IGNORECASE)
+    
     if regex.search(pos=10, string=request.url):
         logger.debug(f"Abort request :{request.url}")
         await route.abort()
     else:
+        headers = request.headers.copy()
+
+        # if "https://www.zhihu.com/api/v5.1/topics/" in request.url:
+        #     headers['sec-ch-ua'] = '"Chromium";v="110", "Not A(Brand";v="24", "Google Chrome";v="110"'
+        #     headers["x-ab-pb"] = "ClIbAD8ARwC0AGkBagF0ATsCzALXAtgCtwPWBBEFUQWLBYwFngUxBusGJwd0CHkIYAn0CUkKawq+CkMLcQuHC40L1wvgC+UL5gtxDI8MrAzDDPgMEikAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAA=="
+        #     headers["x-zse-96"] = "2.0_hr1LT7N+0YVmQJGTcnJGa2VyGer+Fnm2SVpYL0S7nNm78BLKfm8iN6t9l6uic5dJ"
+        #     headers["x-zst-81"] = "3_2.0VhnTj77m-qofgh3TxTnq2_Qq2LYuDhV80wSL7iUZQ6nxERY0m4fBJCHMiqHPD4S1hCS974e1DrNPAQLYlUefii7q26fp2L2ZKgSfnveCgrNOQwXTt_Fqsruy6unLcbO1NukyrAuOiRnxEL2ZZrxmDucmqhPXnXFMTAoTF6RhRuLPF_g9xUe0k6xYTqL_FUFM89SBcQc9EhLmNCCm_rNCnGLYPJXfaqO_jhL0rgcTveeu60YObUX9pDcmb7CVh9Ymlhpfk9L_CU2fwu3YfqNBbqomsDoBYcP0m039nCH9WqSmqBO0Ng3fDhHf6TX92AL_s0oCQJNOFuFMEcNMUbL9eir_HUtmOqfzK4eVsvoLTvXpQwVZkGxY2eN1kUXY89e8GwO9WhwKgqSLhhoGlU2LJAN9SbHM-BXMqCeYFJU86GL1fDXym7w0tGOq2hxsuhNB17e1QBNqyCeBwhHCGBHC"
+        #     headers["cookie"] = "_zap=ea665014-a855-421b-8657-6aa2a6cc4869; _xsrf=1a9c9f79-5a12-4e9a-a7cd-8799bb81da5d; d_c0=AKDX6ZitbhaPTr72favEmBxE60LWzmLf1L4=|1678164604; Hm_lvt_98beee57fd2ef70ccdd5ca52b9740c49=1678164606; gdxidpyhxdE=ec41vjNt%2FP00I9fopJSNKSGXEoTzZ%5CR%5CC%2Bl%2FdzYpWe87tLGOKmMfcNN8Xyr8pjcr7Oj5kGXEzPCV5H9zwfUOW2%5CPQb0X%5C6RPC%5CYJAdRNg945loUjnzB8w59tPW7R3kbNUPupJH36UrLrLG18KrbgmgkQdwxaB73NAH%2Fvj7RY0xvWPUXo%3A1678166092763; YD00517437729195%3AWM_NI=qc72U%2BV9VFRrEOnuFSEvfl%2FT5AxGOV%2B%2FM4Xrms1CQnC%2FGqBTf7UeDwtWHlwgPI5Qq83dPwtl8uMQsjWmglNDGFnjLmasYOiLNd4jo37g9I7PsKg9%2BOhtiiHsUiN5QIrtNEo%3D; YD00517437729195%3AWM_NIKE=9ca17ae2e6ffcda170e2e6eed1bc79aab99a90d67fb2b88fa7c55b928b8e86d45c9aea9783fb50a68afe8ec62af0fea7c3b92ab3bdf9d3d82196e79aa7d17a8791a296c55987aaaa8dae60f79fb8a8ce5ee9f183d5db7aafadffa4d46681f18992c160a6e99b86c77db889888df66d9497fbb2f434f1bca098f768fcab83b2f26295b3a98dcd50859aa28bcf67a3ad97b0ec488ebcfc8bee39f5b9f7aab65cb195a9daaa45acaca78acb7997b782d6d443b2ac82a6ee37e2a3; YD00517437729195%3AWM_TID=cLJ2etwLEwdFVRVEBUKFKcrJP0CbEz3X; Hm_lpvt_98beee57fd2ef70ccdd5ca52b9740c49=1678165207; KLBRSID=fe0fceb358d671fa6cc33898c8c48b48|1678165207|1678164604; captcha_session_v2=2|1:0|10:1678165207|18:captcha_session_v2|88:WGJsbkw1ZTRva1JiN1BIbWt5d1pNVnQ4M3FLZ0xnNUxVYTBRaUNLdG1JNlptQ0NjVUtmOWlRMXV1dWd3N1c2aw==|c00fd69841f0e4955bf63a8232f122eb99ffc9b6b247f1a7e981a102341e2bd5"
+
         # logger.success(request.url)
 
-        await route.continue_()
+        await route.continue_(headers=headers)
 
     # if request.url == 'https://www.example.com/api':
     #     # Modify the request headers or body
@@ -360,9 +374,18 @@ async def scrape_topics(headless=True):
             [await x.close() for _, x in current_pages]
 
 
-async def get_question_answer_urls_from_page(page: Page, topic_url: str, scrolldown=5):
-    await page.goto(topic_url)
+async def cancel_pop_up(page:Page):
+    await page.wait_for_timeout(1000)
+    await page.locator("body > div:nth-child(35) > div > div > div > div.Modal.Modal--default.signFlowModal > button > svg").click()
 
+async def get_question_answer_urls_from_page(page: Page, topic_url: str, scrolldown=5):
+    # await page.wait_for_timeout(np.random.randint(1000, 3500))
+
+    await page.goto(topic_url)
+    # await page.wait_for_timeout(np.random.randint(1000, 3500))
+
+    await cancel_pop_up(page)
+    # await page.wait_for_timeout(np.random.randint(1000, 3500))
     for _ in range(scrolldown):
         await page.keyboard.down("End")
         await page.wait_for_timeout(1000)
@@ -376,11 +399,24 @@ async def get_question_answer_urls_from_page(page: Page, topic_url: str, scrolld
     return question_urls
 
 
+async def weird_ritual(browser:Browser, device:Any):
+    try:
+            context = await browser.new_context(
+            **device,
+            java_script_enabled=False,
+            screen={"width": 1920, "height": 1200}
+        )
+            page: Page = await context.new_page()
+        
+            await page.goto("https://www.zhihu.com/topic", timeout=3000)
+            await context.close()
+
+    except Exception as e1:
+        logger.info(e1)
+
 """
 End to end auto scrape common topics
 """
-
-
 async def end_to_end_auto_scrape_common_topics(headless=True):
     pattern = r"/question/\d+/answer/\d+"
     all_payloads = []
@@ -388,25 +424,45 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
     relevent_hrefs = all_round_table_df["topic_urls"].tolist()
 
     # only crawl questions with top answers
-    relevent_hrefs = [x + "/top-answers" for x in relevent_hrefs[0:1]]
+    relevent_hrefs = [x + "/top-answers" for x in relevent_hrefs]
     np.random.shuffle(relevent_hrefs)
 
     req_to_abort = ["jpeg", "png", "gif", "banners", "webp"]
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=headless, timeout=10000)
-        page: Page = await browser.new_page()
+        device = p.devices["Desktop Firefox"]
+        '''
+        This is the weird ritual. 
+        We need to start a browser with javascript disabled first. 
+        1. Go to Zhihu and let it sit.
+        2. Create a new context with javascript enabled. 
+        3. Now this session can sroll down infinitely
+        4. Currently we do not need to do the weird ritual everytime. 
+        It seems like zhihu has registered us as normal users.
+        
+        '''
+        browser = await p.firefox.launch(headless=headless, timeout=100000000)
+
+        await weird_ritual(browser, device)
+        context = await browser.new_context(
+        # **device,
+        # java_script_enabled=True,
+        # screen={"width": 1920, "height": 1200}
+        )
+        
+        page: Page = await context.new_page()
         await page.route(
             "**",
             lambda route, request: asyncio.create_task(
                 intercept_request(route, request, req_to_abort)
             ),
         )
-
         for topic_url in tqdm(relevent_hrefs):
             try:
                 question_urls = await get_question_answer_urls_from_page(
-                    page, topic_url
+                    page, topic_url,
+                    scrolldown=20
                 )
+                
                 print(question_urls)
             #     for qId in question_urls:
             #         qUrl = qId.replace("?write", "")
@@ -454,4 +510,6 @@ if __name__ == "__main__":
     # scrape_round_tables()
     # asyncio.run(end_to_end_auto_scrape(headless))
     # asyncio.run(scrape_topics(headless))
+    # a = requests.get("https://www.zhihu.com/api/v5.1/topics/19555513/feeds")
+    # print(a.content)
     asyncio.run(end_to_end_auto_scrape_common_topics(headless))
