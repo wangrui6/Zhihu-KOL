@@ -424,9 +424,9 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
     relevent_hrefs = all_round_table_df["topic_urls"].tolist()
 
     # only crawl questions with top answers
-    relevent_hrefs = [x + "/top-answers" for x in relevent_hrefs]
+    relevent_hrefs = [x + "/top-answers" for x in relevent_hrefs[0:1]]
     np.random.shuffle(relevent_hrefs)
-
+    print(relevent_hrefs)
     req_to_abort = ["jpeg", "png", "gif", "banners", "webp"]
     async with async_playwright() as p:
         device = p.devices["Desktop Firefox"]
@@ -442,7 +442,7 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
         '''
         browser = await p.firefox.launch(headless=headless, timeout=100000000)
 
-        await weird_ritual(browser, device)
+        # await weird_ritual(browser, device)
         context = await browser.new_context(
         # **device,
         # java_script_enabled=True,
@@ -464,43 +464,45 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
                 )
                 
                 print(question_urls)
-            #     for qId in question_urls:
-            #         qUrl = qId.replace("?write", "")
+                print(len(question_urls))
+                print(len(set(question_urls)))
+                for qId in question_urls:
+                    qUrl = qId.replace("?write", "")
 
-            #         await page.goto(qUrl)
-            #         question_title_cor = await page.locator(
-            #             ".QuestionHeader-title"
-            #         ).all_inner_texts()
-            #         question_title = question_title_cor[0]
+                    await page.goto(qUrl)
+                    question_title_cor = await page.locator(
+                        ".QuestionHeader-title"
+                    ).all_inner_texts()
+                    question_title = question_title_cor[0]
 
-            #         all_hrefs = await get_all_href(page.locator(".QuestionAnswers-answers"))
-            #         # search for all question-answer url
-            #         matches_question_answer_url = set(
-            #             [
-            #                 s
-            #                 for s in all_hrefs
-            #                 if isinstance(s, str) and re.search(pattern, s)
-            #             ]
-            #         )
+                    all_hrefs = await get_all_href(page.locator(".QuestionAnswers-answers"))
+                    # search for all question-answer url
+                    matches_question_answer_url = set(
+                        [
+                            s
+                            for s in all_hrefs
+                            if isinstance(s, str) and re.search(pattern, s)
+                        ]
+                    )
 
-            #         all_question_cor = []
-            #         for k in matches_question_answer_url:
-            #             elem = k.split("/")
-            #             qId = int(elem[-3])
-            #             aId = int(elem[-1])
-            #             all_question_cor.append( get_answer_content(
-            #                 qId, aId, question_title
-            #             ))
-            #         complete_content_data = await asyncio.gather(*all_question_cor)
-            #         content_data_dict = [dataclasses.asdict(x) for x in complete_content_data]
-            #         all_payloads.extend(content_data_dict)
-            #         logger.success(f"Received {len(content_data_dict)} answers from question : {question_title}")
+                    all_question_cor = []
+                    for k in matches_question_answer_url:
+                        elem = k.split("/")
+                        qId = int(elem[-3])
+                        aId = int(elem[-1])
+                        all_question_cor.append( get_answer_content(
+                            qId, aId, question_title
+                        ))
+                    complete_content_data = await asyncio.gather(*all_question_cor)
+                    content_data_dict = [dataclasses.asdict(x) for x in complete_content_data]
+                    all_payloads.extend(content_data_dict)
+                    logger.success(f"Received {len(content_data_dict)} answers from question : {question_title}")
             except Exception as e1:
                 logger.error(e1)
-            # tmp_df = pd.json_normalize(all_payloads)
-            # print(tmp_df)
-            # tmp_df.to_csv("common_topics_zhihu.csv")
-            # logger.success(f"Saved {len(tmp_df)} answers to disk.")
+            tmp_df = pd.json_normalize(all_payloads)
+            print(tmp_df)
+            tmp_df.to_csv("common_topics_zhihu.csv")
+            logger.success(f"Saved {len(tmp_df)} answers to disk.")
 
 
 if __name__ == "__main__":
