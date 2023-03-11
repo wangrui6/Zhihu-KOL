@@ -503,7 +503,7 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
                 for qUrl in question_urls_in_order:
                     qUrl = qUrl.replace("?write", "")
                     qId = qUrl.split("/")[-3]
-                    if qId in cache_seen_all_question:
+                    if qId in cache_seen_question:
                         continue
                     await page.goto(qUrl)
                     await cancel_pop_up(page)
