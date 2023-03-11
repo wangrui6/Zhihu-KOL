@@ -483,12 +483,12 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
         )
         
         page: Page = await context.new_page()
-        await page.route(
-            "**",
-            lambda route, request: asyncio.create_task(
-                intercept_request(route, request, req_to_abort)
-            ),
-        )
+        # await page.route(
+        #     "**",
+        #     lambda route, request: asyncio.create_task(
+        #         intercept_request(route, request, req_to_abort)
+        #     ),
+        # )
         
         for topic_url in tqdm(common_topic_hrefs,desc="Common topics"):
             try:
@@ -505,6 +505,8 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
                     qId = qUrl.split("/")[-3]
                     if qId in cache_seen_question:
                         continue
+                    else:
+                        cache_seen_question.add(qId)
                     await page.goto(qUrl)
                     await cancel_pop_up(page)
 
@@ -558,10 +560,9 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
                     '''
                     If a question yields 5 answers and 
                     '''
-                    if len(content_data_dict) >= 5:
-                        cache_seen_question.add(qId)
+                    # if len(content_data_dict) >= 5:
                     all_payloads.extend(content_data_dict)
-                    logger.success(f"Received {len(content_data_dict)} answers from question : {question_title}")
+                    logger.success(f"Received {len(content_data_dict)} answers from question : {question_title} q_id : {qId}")
             except Exception as e1:
                 logger.error(e1)
             tmp_df = pd.json_normalize(all_payloads)
