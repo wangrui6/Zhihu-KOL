@@ -94,7 +94,7 @@ def get_user_answers(url_token: str, max_count: int = 100000) -> pd.DataFrame:
     limit = 20
     dfs: list[pd.DataFrame] = []
     url = f"https://api.zhihu.com/members/{uid}/answers"
-    while 1:
+    while True:
         params = (
             ("limit", f"{limit}"),
             ("offset", f"{offset}"),
