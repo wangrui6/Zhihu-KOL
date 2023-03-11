@@ -23,11 +23,12 @@ from playwright.sync_api import sync_playwright
 from tqdm import tqdm
 import playwright
 from typing import Any
+from pprint import pprint
 """
 Change the logger level to debug for verbose
 """
 logger.remove()
-logger.add(sys.stderr, level="INFO")
+logger.add(sys.stderr, level="DEBUG")
 
 
 @dataclass
@@ -61,14 +62,14 @@ async def get_answer_content(qid: int, aid: int, question_str: str) -> str:
         "Host": "www.zhihu.com",
     }
     url = f"https://www.zhihu.com/question/{qid}/answer/{aid}"
-    logger.debug(f"start req {url}")
+    # logger.debug(f"start req {url}")
     # PROXIES = {
     # 'http://': 'socks5://127.0.0.1:9050',
     # 'https://': 'socks5://127.0.0.1:9050'
     # }
     async with httpx.AsyncClient(proxies=None) as client:
         response = await client.get(url, headers=headers)
-    logger.debug(f"received response {url}")
+    # logger.debug(f"received response {url}")
 
     soup = BeautifulSoup(response.text, "html.parser")
     content = " ".join([p.text.strip() for p in soup.find_all("p")])
@@ -174,7 +175,7 @@ async def intercept_request(route: Route, request: Request, req_to_abort: List[s
     regex = re.compile("|".join(req_to_abort), flags=re.IGNORECASE)
     
     if regex.search(pos=10, string=request.url):
-        logger.debug(f"Abort request :{request.url}")
+        # logger.debug(f"Abort request :{request.url}")
         await route.abort()
     else:
         headers = request.headers.copy()
@@ -246,20 +247,25 @@ async def end_to_end_auto_scrape(headless=True):
 
                     all_question_cor = []
                     for k in matches_question_answer_url:
-                        elem = k.split("/")
-                        qId = int(elem[-3])
-                        aId = int(elem[-1])
-                        all_question_cor.append(
-                            get_answer_content(qId, aId, question_title)
-                        )
-                    complete_content_data = await asyncio.gather(*all_question_cor)
-                    content_data_dict = [
-                        dataclasses.asdict(x) for x in complete_content_data
-                    ]
-                    all_payloads.extend(content_data_dict)
-                    logger.success(
-                        f"Received {len(content_data_dict)} answers from question : {question_title}"
-                    )
+                        try:
+                            elem = k.split("/")
+                            qId = int(elem[-3])
+                            aId = int(elem[-1])
+                            all_question_cor.append(
+                                get_answer_content(qId, aId, question_title)
+                            )
+                            complete_content_data = await asyncio.gather(*all_question_cor)
+                            content_data_dict = [
+                                dataclasses.asdict(x) for x in complete_content_data
+                            ]
+                            all_payloads.extend(content_data_dict)
+                            logger.success(
+                                f"Received {len(content_data_dict)} answers from question : {question_title}"
+                            )
+                        except Exception as e2:
+                            logger.error(e2, k)
+                            
+
             except Exception as e1:
                 logger.error(e1)
             tmp_df = pd.json_normalize(all_payloads)
@@ -376,7 +382,7 @@ async def scrape_topics(headless=True):
 
 async def cancel_pop_up(page:Page):
     await page.wait_for_timeout(1000)
-    await page.locator("body > div:nth-child(35) > div > div > div > div.Modal.Modal--default.signFlowModal > button > svg").click()
+    await page.locator(".Modal-closeButton").click()
 
 async def get_question_answer_urls_from_page(page: Page, topic_url: str, scrolldown=5):
     # await page.wait_for_timeout(np.random.randint(1000, 3500))
@@ -421,12 +427,14 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
     pattern = r"/question/\d+/answer/\d+"
     all_payloads = []
     all_round_table_df = pd.read_csv("data/common_topics.csv")
-    relevent_hrefs = all_round_table_df["topic_urls"].tolist()
+    common_topic_hrefs = all_round_table_df["topic_urls"].tolist()
 
     # only crawl questions with top answers
-    relevent_hrefs = [x + "/top-answers" for x in relevent_hrefs[0:1]]
-    np.random.shuffle(relevent_hrefs)
-    print(relevent_hrefs)
+    common_topic_hrefs = [x + "/top-answers" for x in common_topic_hrefs]
+    np.random.shuffle(common_topic_hrefs)
+    logger.debug("Starts scraping")
+    logger.debug(f"Common topic urls to scrape : {len(common_topic_hrefs)}")
+    scroll_down_num = 5
     req_to_abort = ["jpeg", "png", "gif", "banners", "webp"]
     async with async_playwright() as p:
         device = p.devices["Desktop Firefox"]
@@ -456,26 +464,28 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
                 intercept_request(route, request, req_to_abort)
             ),
         )
-        for topic_url in tqdm(relevent_hrefs):
+        for topic_url in tqdm(common_topic_hrefs,desc="Common topics"):
             try:
                 question_urls = await get_question_answer_urls_from_page(
                     page, topic_url,
-                    scrolldown=20
+                    scrolldown=scroll_down_num
                 )
                 
-                print(question_urls)
-                print(len(question_urls))
-                print(len(set(question_urls)))
+           
+                logger.debug(f"Captured {len(set(question_urls))} unique questions from this topic")
                 for qId in question_urls:
                     qUrl = qId.replace("?write", "")
 
                     await page.goto(qUrl)
+                    await cancel_pop_up(page)
+
                     question_title_cor = await page.locator(
                         ".QuestionHeader-title"
                     ).all_inner_texts()
                     question_title = question_title_cor[0]
+                    href_comp = page.locator(".Question-main")
 
-                    all_hrefs = await get_all_href(page.locator(".QuestionAnswers-answers"))
+                    all_hrefs = await get_all_href(href_comp)
                     # search for all question-answer url
                     matches_question_answer_url = set(
                         [
@@ -486,13 +496,17 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
                     )
 
                     all_question_cor = []
+                    logger.debug(matches_question_answer_url)
                     for k in matches_question_answer_url:
-                        elem = k.split("/")
-                        qId = int(elem[-3])
-                        aId = int(elem[-1])
-                        all_question_cor.append( get_answer_content(
-                            qId, aId, question_title
-                        ))
+                        try:
+                            elem = k.split("/")
+                            qId = int(elem[-3].replace("#!", ""))
+                            aId = int(elem[-1].replace("#!", ""))
+                            all_question_cor.append( get_answer_content(
+                                qId, aId, question_title
+                            ))
+                        except Exception as e2:
+                            logger.error(e2, k)
                     complete_content_data = await asyncio.gather(*all_question_cor)
                     content_data_dict = [dataclasses.asdict(x) for x in complete_content_data]
                     all_payloads.extend(content_data_dict)
