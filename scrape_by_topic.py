@@ -28,7 +28,7 @@ from pprint import pprint
 Change the logger level to debug for verbose
 """
 logger.remove()
-logger.add(sys.stderr, level="DEBUG")
+logger.add(sys.stderr, level="INFO")
 
 
 @dataclass
@@ -452,7 +452,7 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
     all_payloads = []
     all_round_table_df = pd.read_csv("data/common_topics.csv")
     common_topic_hrefs = all_round_table_df["topic_urls"].tolist()
-    scroll_down_num = 20
+    scroll_down_num = 5
 
     # only crawl questions with top answers
     common_topic_hrefs = [x + "/top-answers" for x in common_topic_hrefs]
@@ -497,9 +497,9 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
                 
            
                 logger.debug(f"Captured {len(set(question_urls))} unique questions from this topic")
-                for qId in question_urls:
-                    qUrl = qId.replace("?write", "")
-
+                for qUrl in question_urls:
+                    qUrl = qUrl.replace("?write", "")
+                    qId = qUrl.split("/")[-3]
                     await page.goto(qUrl)
                     await cancel_pop_up(page)
 
@@ -516,9 +516,17 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
                             s
                             for s in all_hrefs
                             if isinstance(s, str) and re.search(pattern, s)
+                            and qId in s
                         ]
                     )
-
+                    # rej_urls = set(
+                    #     [
+                    #         s
+                    #         for s in all_hrefs
+                    #         if isinstance(s, str) and re.search(pattern, s)
+                    #         and qId not in s
+                    #     ]
+                    # )
                     all_question_cor = []
                     logger.debug(matches_question_answer_url)
                     for k in matches_question_answer_url:
