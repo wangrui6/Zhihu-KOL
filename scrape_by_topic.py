@@ -452,14 +452,15 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
     all_payloads = []
     all_round_table_df = pd.read_csv("data/common_topics.csv")
     common_topic_hrefs = all_round_table_df["topic_urls"].tolist()
-    scroll_down_num = 5
-
+    scroll_down_num = 30
     # only crawl questions with top answers
     common_topic_hrefs = [x + "/top-answers" for x in common_topic_hrefs]
     np.random.shuffle(common_topic_hrefs)
     logger.debug("Starts scraping")
     logger.debug(f"Common topic urls to scrape : {len(common_topic_hrefs)}")
     req_to_abort = ["jpeg", "png", "gif", "banners", "webp"]
+    cache_seen_link = set()
+    cache_seen_question = set()
     async with async_playwright() as p:
         device = p.devices["Desktop Firefox"]
         '''
@@ -488,6 +489,7 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
                 intercept_request(route, request, req_to_abort)
             ),
         )
+        
         for topic_url in tqdm(common_topic_hrefs,desc="Common topics"):
             try:
                 question_urls = await get_question_answer_urls_from_page(
@@ -497,9 +499,12 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
                 
            
                 logger.debug(f"Captured {len(set(question_urls))} unique questions from this topic")
-                for qUrl in question_urls:
+                question_urls_in_order = sorted(list(question_urls))
+                for qUrl in question_urls_in_order:
                     qUrl = qUrl.replace("?write", "")
                     qId = qUrl.split("/")[-3]
+                    if qId in cache_seen_all_question:
+                        continue
                     await page.goto(qUrl)
                     await cancel_pop_up(page)
 
@@ -507,6 +512,15 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
                         ".QuestionHeader-title"
                     ).all_inner_texts()
                     question_title = question_title_cor[0]
+                    '''
+                    Scroll down in questions and load more answers from same questions
+                    '''
+                    try:
+                        await page.locator("div.ViewAll:nth-child(5)").click()
+                        await page.wait_for_timeout(500)
+                        await page.keyboard.down("End")
+                    except Exception as e3:
+                        logger.error(e3)
                     href_comp = page.locator(".Question-main")
 
                     all_hrefs = await get_all_href(href_comp)
@@ -519,18 +533,18 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
                             and qId in s
                         ]
                     )
-                    # rej_urls = set(
-                    #     [
-                    #         s
-                    #         for s in all_hrefs
-                    #         if isinstance(s, str) and re.search(pattern, s)
-                    #         and qId not in s
-                    #     ]
-                    # )
+
                     all_question_cor = []
                     logger.debug(matches_question_answer_url)
+                    # await page.wait_for_timeout(200000)
+                    
                     for k in matches_question_answer_url:
+                   
                         try:
+                            if k in cache_seen_link:
+                                continue
+                            else:
+                                cache_seen_link.add(k)
                             elem = k.split("/")
                             qId = int(elem[-3].replace("#!", ""))
                             aId = int(elem[-1].replace("#!", ""))
@@ -541,6 +555,11 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
                             logger.error(e2, k)
                     complete_content_data = await asyncio.gather(*all_question_cor)
                     content_data_dict = [dataclasses.asdict(x) for x in complete_content_data]
+                    '''
+                    If a question yields 5 answers and 
+                    '''
+                    if len(content_data_dict) >= 5:
+                        cache_seen_question.add(qId)
                     all_payloads.extend(content_data_dict)
                     logger.success(f"Received {len(content_data_dict)} answers from question : {question_title}")
             except Exception as e1:
