@@ -62,14 +62,14 @@ async def get_answer_content(qid: int, aid: int, question_str: str) -> str:
         "Host": "www.zhihu.com",
     }
     url = f"https://www.zhihu.com/question/{qid}/answer/{aid}"
-    # logger.debug(f"start req {url}")
+    logger.debug(f"start req {url}")
     # PROXIES = {
     # 'http://': 'socks5://127.0.0.1:9050',
     # 'https://': 'socks5://127.0.0.1:9050'
     # }
     async with httpx.AsyncClient(proxies=None) as client:
         response = await client.get(url, headers=headers)
-    # logger.debug(f"received response {url}")
+    logger.debug(f"received response {url}")
 
     soup = BeautifulSoup(response.text, "html.parser")
     content = " ".join([p.text.strip() for p in soup.find_all("p")])
@@ -196,6 +196,30 @@ async def intercept_request(route: Route, request: Request, req_to_abort: List[s
     #     request.headers['Authorization'] = 'Bearer <access_token>'
     #     request.post_data = 'param1=value1&param2=value2'
 
+
+async def get_questions(page:Page, topic_url:str):
+    await page.goto(topic_url)
+    all_hrefs =  await get_all_href(page)
+    question_urls = set(
+        [x for x in all_hrefs if "/question/" in x and "waiting" not in x]
+    )
+    return question_urls
+
+async def intercept_request(route:Route, request:Request, req_to_abort:List[str]):
+
+    regex = re.compile( '|'.join(req_to_abort), flags=re.IGNORECASE)
+    if regex.search(pos = 10,string=request.url):
+        logger.debug(f"Abort request :{request.url}")
+        await route.abort()
+    else:
+        # logger.success(request.url)
+
+        await route.continue_()
+
+    # if request.url == 'https://www.example.com/api':
+    #     # Modify the request headers or body
+    #     request.headers['Authorization'] = 'Bearer <access_token>'
+    #     request.post_data = 'param1=value1&param2=value2'
 
 """
 End to end auto scrape topics from round table
@@ -428,13 +452,13 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
     all_payloads = []
     all_round_table_df = pd.read_csv("data/common_topics.csv")
     common_topic_hrefs = all_round_table_df["topic_urls"].tolist()
+    scroll_down_num = 20
 
     # only crawl questions with top answers
     common_topic_hrefs = [x + "/top-answers" for x in common_topic_hrefs]
     np.random.shuffle(common_topic_hrefs)
     logger.debug("Starts scraping")
     logger.debug(f"Common topic urls to scrape : {len(common_topic_hrefs)}")
-    scroll_down_num = 5
     req_to_abort = ["jpeg", "png", "gif", "banners", "webp"]
     async with async_playwright() as p:
         device = p.devices["Desktop Firefox"]
@@ -518,6 +542,108 @@ async def end_to_end_auto_scrape_common_topics(headless=True):
             tmp_df.to_csv("common_topics_zhihu.csv")
             logger.success(f"Saved {len(tmp_df)} answers to disk.")
 
+'''
+We do not need to scrpae round table topic repeatedly because round table topics are only 1.6k in total and it is growing very slow
+'''
+def scrape_round_tables(headless=True):
+    output_dir = "./data"
+
+    roundtable_topic_scrolldown = 200
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless, timeout=60000)
+        page = browser.new_page()
+        page.goto("https://zhihu.com/roundtable")
+        # Scroll down roundtable topic to get more topic urls
+        for _ in range(roundtable_topic_scrolldown):
+            page.keyboard.down("End")
+            page.wait_for_timeout(500)
+        hrefs = get_all_href(page)
+        relevent_hrefs = [x for x in hrefs if "https://www.zhihu.com/roundtable/" in x]
+        round_table_df = pd.DataFrame({
+            "round_table_topic_url" : relevent_hrefs
+        })
+        round_table_df.to_csv(f"{output_dir}/round_table_topics.csv")
+
+async def scrape_topics(headless=True):
+    output_dir = "./data"
+    base_topic = [
+        "生活方式",
+        "经济学",
+        "运动",
+        "互联网",
+        '艺术',
+        "阅读",
+        "美食",
+        "动漫",
+        "汽车",
+        "教育",
+        "摄影",
+        "历史",
+        "文化",
+        "旅行",
+        "职业发展",
+        "金融",
+        "游戏",
+        "篮球",
+        "生物学",
+        "物理学",
+        "化学",
+        "科技",
+        "体育",
+        "商业",
+        "健康",
+        "创业",
+        "设计",
+        "自然科学",
+        "法律",
+        "电影",
+        "音乐",
+        "投资"
+    ]
+    batch_size = 3
+    batch_topics = []
+    for i in range(0,len(base_topic), batch_size):
+        batch_topics.append(base_topic[i:i + batch_size])
+    scroll_down_num = 30
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=headless, timeout=60000)
+        for batch in batch_topics:
+            
+            page_traverse_cor = []
+            current_pages : List[(str,Page)] = []
+            for topic in batch:
+                page = await browser.new_page()
+                page_traverse_cor.append(page.goto(f"https://zhihu.com/topics#{topic}"))
+                current_pages.append((topic, page))
+            await asyncio.gather(*page_traverse_cor)
+            # await page.wait_for_timeout(2000)
+            all_df = pd.DataFrame()
+            skip_page_id =  []
+
+            for _ in tqdm(range(scroll_down_num)):
+                for page_id, (topic_cat,topic_page) in enumerate(current_pages):
+                    try:
+                        if page_id in skip_page_id:
+                            continue
+                        if len(skip_page_id) == len(current_pages):
+                            break
+                        await topic_page.locator("body > div.zg-wrap.zu-main.clearfix > div.zu-main-content > div > div > div.zm-topic-cat-sub > a:nth-child(2)").click(timeout=3000)
+                        await topic_page.keyboard.down("End")
+                        await topic_page.wait_for_timeout(1000)
+                    except Exception as e2:
+                            logger.warning(e2)
+                            skip_page_id.append(page_id)
+                            if len(skip_page_id) == len(current_pages):
+                                break
+                    hrefs = await get_all_href(topic_page)
+                    relevent_hrefs = [x for x in hrefs if "https://www.zhihu.com/topic/" in x]
+                    topic_df = pd.DataFrame({
+                        "topic_urls" : relevent_hrefs
+                    })
+                    topic_df["basic_topic_category"] =  topic_cat
+                    all_df = pd.concat([all_df, topic_df])
+                all_df.to_csv(f"{output_dir}/common_topics.csv", header=False, mode="a")
+            [await x.close() for _,x in current_pages]
 
 if __name__ == "__main__":
     headless = False
