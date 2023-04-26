@@ -1,7 +1,9 @@
 *.csv
 *.parquet
 *.out
+.ipynb_checkpoints/
 !data/round_table_topics.csv
 !data/common_topics.csv
-
+/notebooks
 .vscode
+*.pem
