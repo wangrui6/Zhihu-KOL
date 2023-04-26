@@ -6,3 +6,4 @@
 !data/common_topics.csv
 /notebooks
 .vscode
+*.pem
